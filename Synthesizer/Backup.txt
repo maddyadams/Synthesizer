@@ -1,0 +1,780 @@
+//
+//  main.swift
+//  Synthesizer
+//
+//  Created by Maddy Adams on 8/17/19.
+//  Copyright © 2019 Maddy Adams. All rights reserved.
+//
+
+import Foundation
+
+Synthesizer().main()
+
+//
+//  Synthesizer.swift
+//  Synthesizer
+//
+//  Created by Maddy Adams on 8/17/19.
+//  Copyright © 2019 Maddy Adams. All rights reserved.
+//
+
+import Foundation
+
+//.wav handling
+struct Synthesizer {
+    func main() {
+        Persistent.setup()
+        let soundData = makeSoundData()
+        var data = Data()
+        data.append("RIFF".ascii())
+        data.append((36 + soundData.count).pad(4))
+        data.append("WAVE".ascii())
+        
+        let numChannels = 1
+        let sampleRate = 44100
+        let bitsPerSample = 16
+        data.append("fmt ".ascii())
+        data.append(16.pad(4))
+        data.append(1.pad(2))
+        data.append(numChannels.pad(2))
+        data.append(sampleRate.pad(4))
+        data.append((sampleRate * numChannels * bitsPerSample / 8).pad(4))
+        data.append((numChannels * bitsPerSample / 8).pad(2))
+        data.append(bitsPerSample.pad(2))
+        
+        data.append("data".ascii())
+        data.append(soundData.count.pad(4))
+        data.append(soundData)
+        
+        try! data.write(to: URL(fileURLWithPath: "/Users/msa/Desktop/synthesized.wav"))
+        print("did write")
+    }
+    
+}
+
+enum Instrument: String {
+    case inst1, inst1NoSaws, inst2, inst3, inst4, inst5, inst6, inst7, inst8, inst8DoubledOctaveUp, inst9
+    
+    func gen() -> Gen {
+        switch self {
+        case .inst1:
+            return { (f, t) in
+                let sines = sineWave(f/2, t) + sineWave(f, t) + sineWave(2*f, t)
+                let saws = sawtoothWave(f/2, t) + sawtoothWave(f, t) + sawtoothWave(2*f, t)
+                
+                return sines + 0.1*saws * max(0, sineWave(1.0/6, t))
+            }
+        case .inst1NoSaws:
+            return { (f, t) in
+                return sineWave(f/2, t) + sineWave(f, t) + sineWave(2*f, t)
+            }
+        case .inst2:
+            return { (f, t) in
+            let freqs = [1, 2, 4].map { (Double($0), pow(4.0, Double(1-$0))) }
+            return harmonicSeries(sineWave, freqs)(f, t)
+            }
+        case .inst3:
+            return { (f, t) in
+            let first = sineWave(f, t)
+            let rest: [Double] = Array(2...4).map {
+                let a = sineWave(f * Double($0), t)
+                let b = max(0, sineWave(1.0/6, t))
+                return a * b / Double($0)
+            }
+            var total = first
+            for x in rest { total += x }
+            return total
+            }
+        case .inst4:
+            return { (f, t) in
+            return (triangleWave(f, t) + 0.25*sineWave(2*f, t) + 0.1*sineWave(0.5*f, t))*0.25
+            }
+        case .inst5:
+            return { (f, t) in
+                return sineWave(f, t) + 0.1*squareWave(f, t)
+            }
+            
+        case .inst6:
+            return { (f, t) in
+                return triangleWave(f, t) + sineWave(f*2, t) + 0.25*sawtoothWave(f, t)
+            }
+            
+        case .inst7:
+            return { (f, t) in
+                return (sineWave(f, t) + sineWave(f*2, t) + sineWave(f*3, t) + triangleWave(f, t) + triangleWave(f*2, t))/5
+            }
+            
+        case .inst8:
+            return { (f, t) in
+                return triangleWave(f, t) + 0.5*sawtoothWave(f, t)*((triangleWave(125/(8*60), t)+1)/2)
+            }
+            
+        case .inst8DoubledOctaveUp:
+            return { (f, t) in
+                return (Instrument.inst8.gen()(f, t) + 0.5*Instrument.inst8.gen()(f*2, t))
+            }
+            
+        case .inst9:
+            return { (f, t) in
+                return harmonicSeries(sineWave, [(1, 1), (2, 1/2), (4, 1/4)])(f, t)
+            }
+        }
+    }
+}
+
+extension Synthesizer {
+    func makeSoundData() -> Data {
+        return renderPolyphony(song3())
+    }
+    
+    
+    func test() -> [Line] {
+        return [.init(bpm: 125, string: "(INST=inst8DoubledOctaveUp)A4{8}G4{7}r{1/2}D4{1/2}"*2)]
+    }
+    
+    func song1() -> [Line] {
+        let bass =
+            "(INST=inst1)(TEMPO=1/8)" +
+            "[D3A3]  [C3G3]  [G2D3]  [Bb2F3]{1/2}[C3G3]{1/2}"*2 +
+            
+            "(INST=inst1NoSaws)" +
+            "(ADSR=1;0;0;22050)[D3A3]  (ADSR=0.1;0;44100;11025)[C3G3]  [G2D3]  [Bb2F3]{1/2}[C3G3]{1/2}" +
+            "[D3A3]  [C3G3]  [G2D3]  [Bb2F3]{1/2}[C3G3]{1/2}" +
+            
+            "(TEMPO=4)(ADSR=1;0;0;0)" +
+            ("D3{5}F3{2}A3D4{6}A3{2} D3{5}F3{2}A3D4{6}A3{2}" +
+                "C3{5}E3{2}G3C4{6}G3{2} C3{5}E3{2}G3C4{6}G3{2}" +
+                "G2{5}B2{2}D3G3{6}D3{2} G2{5}B2{2}D3G3{6}D3{2}" +
+                "Bb2{5}D3{2}F3Bb3{3}F3{2}D3{2}Bb2 C3{5}E3{2}G3C4{3}G3{2}E3{2}C3")*2 +
+                
+            "(TEMPO=4)(ADSR=1;0;0;0)" +
+            ("D3{5}F3{2}A3D4{6}A3{2} D3{5}F3{2}A3D4{6}A3{2}" +
+                "C3{5}E3{2}G3C4{6}G3{2} C3{5}E3{2}G3C4{6}G3{2}" +
+                "G2{5}B2{2}D3G3{6}D3{2} G2{5}B2{2}D3G3{6}D3{2}" +
+                "Bb2{5}D3{2}F3Bb3{3}F3{2}D3{2}Bb2 C3{5}E3{2}G3C4{3}G3{2}E3{2}C3")*2 +
+            
+            "(INST=inst1NoSaws)(TEMPO=1/8)" +
+            "[D3A3]  [C3G3]  [G2D3]  [Bb2F3]{1/2}[C3G3]{1/2}"*2 +
+                
+            "(TEMPO=1)" +
+            "[D3A3]{2}[C3G3]{2}[G2D3]{2}" +
+            "(TEMPO=0.9)[Bb2F3]{1/2}(TEMPO=0.8)[Bb2F3]{1/2}(TEMPO=0.7)[C3G3]{1/2}(TEMPO=0.6)[C3G3]{1/2} (TEMPO=0.5)[D3A3]{2}" +
+            ""
+        
+        let tenor =
+            "(INST=inst5)(TEMPO=4)(ADSR=2;0;2205;441)" +
+            ("C4D4rD4rD4rD4"*3 + "rD4rD4F4E4D4C4") * 4 +
+            ("C4D4rD4rD4rD4"*3 + "rD4rD4F4E4D4C4") * 3 +
+            "C4D4rD4rD4rD4"*3 + "rD4rD4F4{2}E4{2}" +
+            
+            "(TEMPO=1)(DYNAM=1.5)" +
+            "(ADSR=1;441;2205;11025)F4{2}r{5}(ADSR=1;11025;0;11025)F4  E4{2}r{5}E4  B3{2}r{5}E4  D4{2}r{2}D4{2}r{2}" +
+            "F4{2}r{5}A4  E4{2}r{5}A4  [B3D4]{2}r{5}A4  D4{2}A4{2}D4{2}A4{2}" +
+            
+            "(TEMPO=1)(ADSR=1;0;0;0)(DYNAM=1)" +
+            "F4{2}r{5}F4  E4{2}r{5}E4  B3{2}r{5}E4  D4{2}r{2}D4{2}r{2}" +
+            "F4{2}r{5}A4  E4{2}r{5}A4  [B3D4]{2}r{5}A4  D4{2}A4{2}D4{2}A4{2}" +
+            
+            "(TEMPO=1)" +
+            "r{32}" +
+            "(TEMPO=4)(DYNAM=0.5)" +
+            "r{2}F4D4F4D4F4D4"*4 + "r{2}E4C4E4C4E4C4"*4 +
+            "r{2}F4D4F4D4F4D4"*4 + "r{2}F4D4F4D4F4D4"*2 + "r{2}E4C4E4C4E4C4"*2 +
+            
+            "(TEMPO=1)(ADSR=1;0;0;0)(DYNAM=1)" +
+            "F4{2}r{5}F4  E4{2}r{5}E4  B3{2}r{5}E4  D4{2}r{2}D4{2}r{2}" +
+            "F4{2}r{5}A4  E4{2}r{5}A4  [B3D4]{2}r{5}A4  D4{2}A4{2}D4{2}A4{2}" +
+                
+            "(TEMPO=4)" +
+            "(DYNAM=1)C4D4rD4rD4rD4" + "(DYNAM=0.9)C4D4rD4rD4rD4" +
+            "(DYNAM=0.7)C4D4rD4rD4rD4" + "(DYNAM=0.5)(TEMPO=3.6)F4{2}(TEMPO=3.2)E4{2}(TEMPO=2.8)D4{2}(TEMPO=2.4)C4{2}" +
+            "(TEMPO=2)D4{8}" +
+            ""
+        
+        let sop =
+            "(INST=inst4)(ADSR=2;0;441;0)" +
+            "r{32}" +
+            "(TEMPO=4)" +
+            "r{8}A5D5A5D5A5D5A5D5  r{8}A5D5A5D5A5D5A5G5{3}" +
+            "(TEMPO=2)F5E5C5[C5E5][D5F5][E5G5][F5A5] [E5G5][D5F5][C5E5][G4C5][C5E5][D5F5][E5G5]" +
+            "(TEMPO=4)[C5A5][D5G5]{2}  B4G5B4G5B4G5B4 G5B4G5B4G5B4[C5A5][D5G5]{2}  B4G5B4G5B4G5B4 G5B4G5B4G5B4G5F5" +
+            "D5{8}r{6}G5F5D5{8}r{8}" +
+            
+            "(TEMPO=2)(ADSR=1;0;0;0)(DYNAM=0.4)" +
+            "D5A5G5F5D6A5G5F5 D5A5G5F5D6A5G5F5"*4 * 2 +
+            
+            "(TEMPO=4)(ADSR=1;0;0;0)(DYNAM=1)" +
+            ("C5D5rD5rD5rD5"*3 + "rD5rD5F5E5D5C5")*4 * 2 +
+            
+            "(TEMPO=4)" +
+            ("D5{8}A5{7}G5F5{7}G5A5{2}r{2}C6{2}r{2} C6{7}A5G5{7}F5E5{7}D5C5{2}r{2}E5{2}F5{2}" +
+            "[G5G5]{4}[F5G5]{4}[D5G5]{4}r{2}F5{2}[G5G5]{4}[F5G5]{4}[D5G5]{4}r{2}A5G5 F5{8}D5{8}E5{8}C5{8}")*2 +
+            
+            "(TEMPO=4)" +
+            ("D5{8}A5{7}G5F5{7}G5A5{2}r{2}C6{2}r{2} C6{7}A5G5{7}F5E5{7}D5C5{2}r{2}E5{2}F5{2}" +
+            "[G5G5]{4}[F5G5]{4}[D5G5]{4}r{2}F5{2}[G5G5]{4}[F5G5]{4}[D5G5]{4}r{2}A5G5 F5{8}D5{8}E5{8}C5{8}")*2 +
+                
+            "(TEMPO=1)" +
+            "D5{2}" +
+            ""
+        
+        
+        let bpm: Double = 84
+        let lines = [Line(bpm: bpm, string: bass),
+                     .init(bpm: bpm, string: tenor),
+                     .init(bpm: bpm, string: sop)]
+        return lines
+    }
+    
+    func song2() -> [Line] {
+        let bass = "(TEMPO=1/4)(INST=inst6)(DYNAM=0.5)" +
+        "D3 F3 C3 G3" +
+        "[D3A3] [F3C4] [C3G3] [G3D4]" +
+        "[D3A3F4] [F3C4A4] [C3G3E4] [G3D4B4]" +
+
+        "[D3A3F4] [F3C4A4] [C3G3E4] [G3D4B4]"*2 +
+
+        "[D3A3] [F3C4] [C3G3] [G3D4]"*4 +
+            
+        "[D3A3] [F3C4] [C3G3] [G3D4]"*4 +
+        ""
+        
+
+        let tenor = "(TEMPO=1)(INST=inst7)(DYNAM=3)" +
+        "r{48}" +
+        
+        "D4{2}D4E4 F4{2}A4{2} E4{5/2}F4{1/4}E4{1/4}D4 B4{5/2}C5{1/4}B4{1/4}A4{3/4}G4{1/4}" +
+        "A4{2}C5{2} C5{3/2}D5{1/4}C5{1/4}A4{3/2}A4{1/2} G4{3}r{1/4}A4{1/4}G4{1/4}F4{1/4} E4r{1/4}F4{1/4}E4{1/4}D4{1/4}C4C4" +
+        
+        "(TEMPO=2)(ECHO=0.8;3)(ADSR=2;0;441;441)" +
+        ("r{2}D4F4A4r{3} r{2}F4A4C5r{3} r{2}C4E4G4r{3} r{2}G4B4D5r{3}" +
+        "r{2}D5A4F4r{3} r{2}C5A4F4r{3} r{2}C5G4E4r{3} r{2}B4G4D4r{3}")*2 +
+        
+        "(DYNAM=1)" +
+        ("r{2}D4F4A4r{3} r{2}F4A4C5r{3} r{2}C4E4G4r{3} r{2}G4B4D5r{3}" +
+        "r{2}D5A4F4r{3} r{2}C5A4F4r{3} r{2}C5G4E4r{3} r{2}B4G4D4r{3}")*2 +
+        ""
+        
+        
+        let sop = "(TEMPO=1/4)(INST=inst8DoubledOctaveUp)" +
+        "r{12}" +
+            
+        "r{8}" +
+        
+        "r{16}" +
+            
+        "(TEMPO=1)" +
+        "A4{8}G4{7}r{1/2}D4{1/2}"*2 +
+        "A4{8}G4{7}r{1/2}D4{1/2}"*2 +
+        ""
+        
+        
+        let bpm: Double = 125
+        return [.init(bpm: bpm, string: bass),
+                .init(bpm: bpm, string: tenor),
+                .init(bpm: bpm, string: sop)]
+    }
+    
+    func song3() -> [Line] {
+        let bass = "(INST=inst9)(TEMPO=1/4)(DYNAM=2)" +
+        "Eb2 G2 Ab2 Eb2{1/2} Bb2{1/2} C3 F2 G2{1/2} Ab2{1/2} Bb2{1/2} Bb1{1/2}" +
+            
+        "Eb2 G2 Ab2 Eb2{1/2} Bb2{1/2} C3 F2 G2{1/2} Ab2{1/2} Bb2{1/2} Bb1{1/2}" +
+        ""
+        
+        
+        let tenor = "(INST=inst9)(TEMPO=1/4)" +
+        "[Bb2Eb3] [D3G3] [Eb3Ab3] [Bb2Eb3]{1/2} [F3Bb3]{1/2}" +
+        "[G3C4] [Ab3C4] [G3Eb4]{1/2} [Ab3Eb4]{1/2} [Bb3Eb4G4]{1/2} [Bb3D4F4]{1/2}" +
+        
+        "(TEMPO=2)(DYNAM=0.5)" +
+        "Eb3Bb3Eb4Bb3"*2 + "Bb3D4F4D4"*2 + "Ab3Bb3C4Eb4Ab4Eb4C4Ab3" + "Eb3F3G3Bb3 Bb3C4D4F4" +
+        "C3D3Eb3G3C4G3Eb3D3" + "Ab2Bb2C3Eb3Ab3Eb3C3Ab3" + "Eb3Bb3Eb4Bb3 Eb3Ab3C4Ab3" + "G3Bb3Eb3Bb3 F3Bb3D4Bb3" +
+        ""
+        
+        
+        let sop = "(INST=inst7)" +
+        "Eb5{3}F5 D5{3}Eb5 C5{15/4}Bb4{1/4} G4{2}Bb4{2} C5{2}Bb4C5 Ab4{3}Bb4 G4{2}Bb4{2} Eb5{2}D5{2}" +
+            
+        "Eb5{3}F5 D5{3}Eb5 C5{15/4}Bb4{1/4} G4{2}Bb4{2} C5{2}Bb4C5 Ab4{3}Bb4 G4{2}Bb4{2} Eb5{2}D5{2}" +
+        ""
+
+        
+        let bpm: Double = 72
+        return [.init(bpm: bpm, string: bass),
+                .init(bpm: bpm, string: tenor),
+                .init(bpm: bpm, string: sop)]
+    }
+}
+
+//
+//  MiscHelpers.swift
+//  Synthesizer
+//
+//  Created by Maddy Adams on 8/17/19.
+//  Copyright © 2019 Maddy Adams. All rights reserved.
+//
+
+import Foundation
+
+struct Persistent {
+    static var noteOctaveToHz = [String : Double]()
+    static func setup() {
+        let data: [[String] : Int] = [
+            ["A", "Bbb", "Gx"] : 0,
+            ["A#", "Bb", "Cbb"] : 1,
+            ["B", "Ax", "Cb"] : 2,
+            ["C", "B#", "Dbb"] : -9,
+            ["C#", "Bx", "Db"] : -8,
+            ["D", "Cx", "Ebb"] : -7,
+            ["D#", "Eb", "Fbb"] : -6,
+            ["E", "Dx", "Fb"] : -5,
+            ["F", "E#", "Gbb"] : -4,
+            ["F#", "Ex", "Gb"] : -3,
+            ["G", "Fx", "Abb"] : -2,
+            ["G#", "Ab"] : -1
+        ]
+        let tuples = data.map { (k: [String], v: Int) in k.map { ($0, v) } }.reduce([], +)
+        Persistent.noteOctaveToHz["r"] = 0
+        for octave in 0...9 {
+            for t in tuples {
+                let rawHz = 440.0 * pow(2.0, Double(t.1) / 12)
+                
+//                let cents: Double
+//                switch t.1 - 1 {
+//                case -9: cents = 1200 * -4 / 22
+//                case -8: cents = 1200 * -2 / 22
+//                case -7: cents = 1200 * 0 / 22
+//                case -6: cents = 1200 * 2 / 22
+//                case -5: cents = 1200 * 4 / 22
+//                case -4: cents = 1200 * 6 / 22
+//                case -3: cents = 1200 * 8 / 22
+//                case -2: cents = 1200 * 9 / 22
+//                case -1: cents = 1200 * 11 / 22
+//                case 0: cents = 1200 * 13 / 22
+//                case 1: cents = 1200 * 15 / 22
+//                case 2, -10: cents = 1200 * 17 / 22
+//                default: fatalError()
+//                }
+//                let cents: Double
+//                switch t.1 {
+//                case -9: cents = 1200 * -6 / 22
+//                case -8: cents = 1200 * -4 / 22
+//                case -7: cents = 1200 * -2 / 22
+//                case -6: cents = 1200 * 0 / 22
+//                case -5: cents = 1200 * 2 / 22
+//                case -4: cents = 1200 * 4 / 22
+//                case -3: cents = 1200 * 6 / 22
+//                case -2: cents = 1200 * 7 / 22
+//                case -1: cents = 1200 * 9 / 22
+//                case 0: cents = 1200 * 11 / 22
+//                case 1: cents = 1200 * 13 / 22
+//                case 2: cents = 1200 * 15 / 22
+//                default: fatalError()
+//                }
+                
+//                let rawHz = (440 * 2/3) * pow(2.0, cents / 1200)
+                
+                Persistent.noteOctaveToHz[t.0 + String(octave)] = rawHz * pow(2.0, Double(octave - 4))
+                
+            }
+        }
+    }
+}
+
+func regex(_ s: String, matches: String, allowingEmtpyString: Bool = false) -> [String] {
+    let r = try! NSRegularExpression(pattern: s)
+    let result = r.matches(in: matches, range: NSRange(matches.startIndex..., in: matches))
+    let mapped = result.map { String(matches[Range($0.range, in: matches)!]) }
+    if allowingEmtpyString { return mapped }
+    else { return mapped.filter { !$0.isEmpty } }
+}
+
+extension Int {
+    func pad(_ size: Int) -> Data {
+        var x = self
+        var bytes = [UInt8]()
+        for _ in 0..<size {
+            bytes.append(UInt8(x % 256))
+            x /= 256
+        }
+        return Data(bytes: &bytes, count: size)
+    }
+}
+
+extension String {
+    func ascii() -> Data {
+        return data(using: .ascii)!
+    }
+}
+
+func *(lhs: String, rhs: Int) -> String {
+    return String(repeating: lhs, count: rhs)
+}
+
+extension Double {
+    func toInt16() -> Int16 {
+        let scaled = Int(self * pow(2, 15))
+        return Int16(clamping: scaled)
+    }
+}
+
+//
+//  MathHelpers.swift
+//  Synthesizer
+//
+//  Created by Maddy Adams on 8/17/19.
+//  Copyright © 2019 Maddy Adams. All rights reserved.
+//
+
+import Foundation
+
+//raw waves
+func sineWave(_ f: Double, _ t: Int) -> Double {
+    guard f > 0 else { return 0 }
+    return sin(2 * .pi * Double(t) * f / 44100)
+}
+
+func squareWave(_ f: Double, _ t: Int) -> Double {
+    guard f > 0 else { return 0 }
+    let framesPerCycle = 44100 / f
+    return (Double(t) / framesPerCycle).truncatingRemainder(dividingBy: 1) > 0.5 ? 1 : -1
+}
+
+func sawtoothWave(_ f: Double, _ t: Int) -> Double {
+    guard f > 0 else { return 0 }
+    let framesPerCycle = 44100 / f
+    return (Double(t) / framesPerCycle).truncatingRemainder(dividingBy: 1) * 2 - 1
+}
+
+func triangleWave(_ f: Double, _ t: Int) -> Double {
+    guard f > 0 else { return 0 }
+    let framesPerCycle = 44100 / f
+    let percent = Double(t).truncatingRemainder(dividingBy: framesPerCycle) / framesPerCycle
+    return percent > 0.5 ? 4 * (1 - percent) - 1 : 4 * percent - 1
+}
+
+//math helpers
+typealias Gen = (Double, Int) -> Double
+func harmonicSeries(_ gen: @escaping Gen, _ freqs: [(Double, Double)]) -> Gen {
+    return { (f: Double, t: Int) -> Double in
+        var total = 0.0
+        for x in freqs { total += x.1 * gen(f * x.0, t) }
+        return total
+    }
+}
+
+func linearInterpolateWeights(_ w: [(Int, Double)]) -> [Double] {
+    var result = [Double]()
+    for i in 1..<w.count {
+        let startT = w[i - 1].0
+        let endT = w[i].0
+        let weightParam = { (t: Int) -> Double in Double(t - startT) / Double(endT - startT) }
+        let a = w[i - 1].1
+        let b = w[i].1
+        result.append(contentsOf: Array(startT..<endT).map { weight(weightParam($0), a, b) })
+    }
+    return result
+}
+
+func weight(_ x: Double, _ a: Double, _ b: Double) -> Double {
+    return ((1 - x) * a) + ((x) * b)
+}
+
+
+//
+//  MusicHelpers.swift
+//  Synthesizer
+//
+//  Created by Maddy Adams on 8/17/19.
+//  Copyright © 2019 Maddy Adams. All rights reserved.
+//
+
+import Foundation
+
+protocol Effect { }
+extension Effect {
+    static var id: String { return String(describing: type(of: self)) }
+}
+
+protocol NoteEffect: Effect {
+    func apply(to: inout [Double], at: Int)
+}
+protocol LineEffect: Effect {
+    var effectStart: Int { get }
+    func apply(to: inout [Double], at: Int)
+}
+
+
+struct Echo: LineEffect {
+    var amplitude: Double
+    var beatDelay: Double
+    
+    var framesPerBeat: Double!
+    var frameDelay: Int! { return Int(beatDelay * framesPerBeat) }
+    
+    var effectStart = 0
+    
+    init(amplitude: Double, beatDelay: Double) {
+        self.amplitude = amplitude
+        self.beatDelay = beatDelay
+    }
+    
+    func apply(to: inout [Double], at: Int) {
+        let start = max(at - frameDelay, effectStart)
+        let end = to.count - frameDelay
+        guard start < end else { return }
+        for t in start..<end {
+            to[t + frameDelay] += amplitude * to[t]
+        }
+    }
+}
+
+struct ADSR: NoteEffect {
+    var aPeak: Double
+    var aDur: Int
+    var dDur: Int
+    var rDur: Int
+    
+    init(_ aPeak: Double, _ aDur: Int, _ dDur: Int, _ rDur: Int) {
+        self.aPeak = aPeak
+        self.aDur = aDur
+        self.dDur = dDur
+        self.rDur = rDur
+    }
+    
+    func apply(to: inout [Double], at: Int) {
+        func envelope(t: Int) -> Double {
+            if t < aDur {
+                let p = Double(t) / Double(aDur)
+                return aPeak * p
+            }
+            else if t < aDur + dDur {
+                let p = Double(t - aDur) / Double(dDur)
+                return (1 - p) * aPeak + p * 1
+            } else if to.count < t + rDur {
+                let p = Double(t - (to.count - rDur)) / Double(rDur)
+                return (1 - p) * 1 + p * 0
+            } else {
+                return 1
+            }
+        }
+        for t in at..<to.count {
+            to[t] *= envelope(t: t)
+        }
+    }
+}
+
+struct Event {
+    var freqs = [Double]()
+    var durationNum: Double
+    var durationDenom: Double
+    var command: Command?
+    
+    static let oneNoteOctaveRegex = #"[A-G](#|x|b|bb)?\d"#
+    static let commandRegex = #"\([A-Z]+=[^)]+\)"#
+    
+    init(_ s: String) {
+        let restMatches = regex(#"r"#, matches: s)
+        var chordMatches = regex(#"\[(\#(Event.oneNoteOctaveRegex))+\]"#, matches: s)
+        let noteMatches = regex(#"(\#(Event.oneNoteOctaveRegex))"#, matches: s)
+        var numDenomMatches = regex(#"\{(\d+)/(\d+)\}"#, matches: s)
+        var numMatches = regex(#"\{(\d+)\}"#, matches: s)
+        let commandMatches = regex(Event.commandRegex, matches: s)
+        
+        if let c = commandMatches.first {
+            command = Command(c)
+            durationNum = 0
+            durationDenom = 1
+        } else {
+            if let first = chordMatches.first {
+                chordMatches = regex(Event.oneNoteOctaveRegex, matches: first)
+            }
+            numDenomMatches = numDenomMatches.map { $0.split { "{/}".contains($0) } }.reduce([], +).map { String($0) }
+            numMatches = numMatches.map { $0.split { "{}".contains($0) } }.reduce([], +).map { String($0) }
+            
+            let notes = [restMatches, chordMatches, noteMatches].first { $0.count != 0 }!
+            let duration = [numDenomMatches, numMatches, ["1"]].first { $0.count != 0 }!
+            freqs = notes.map { Persistent.noteOctaveToHz[$0]! }
+            durationNum = Double(duration.first!)!
+            durationDenom = Double(duration.dropFirst().first ?? "1")!
+        }
+    }
+    
+    enum Command {
+        case remove(id: String)
+        case adsr(adsr: ADSR)
+        case echo(echo: Echo)
+        
+        case inst(s: String)
+        case tempo(t: Double)
+        case dynam(t: Double)
+        
+        init(_ s: String) {
+            let components = s.dropLast().dropFirst().components(separatedBy: "=")
+            let params = components[1].components(separatedBy: ";")
+            let division = components[1].components(separatedBy: "/")
+            
+            switch components[0] {
+            case "ADSR":
+                if let a = Double(params[0]), let b = Int(params[1]), let c = Int(params[2]), let d = Int(params[3]) {
+                    self = .adsr(adsr: .init(a, b, c, d))
+                } else {
+                    self = .remove(id: ADSR.id)
+                }
+            case "ECHO":
+                if let a = Double(params[0]), let b = Double(params[1]) {
+                    self = .echo(echo: .init(amplitude: a, beatDelay: b))
+                } else {
+                    self = .remove(id: Echo.id)
+                }
+            
+            case "INST":
+                self = .inst(s: components[1])
+            case "TEMPO":
+                let num = division.first!
+                let denom = division.dropFirst().first ?? "1"
+                self = .tempo(t: Double(num)! / Double(denom)!)
+            case "DYNAM":
+                let num = division.first!
+                let denom = division.dropFirst().first ?? "1"
+                self = .dynam(t: Double(num)! / Double(denom)!)
+            default: fatalError("cannot handle \(s)")
+            }
+        }
+    }
+}
+
+class Line {
+    var events: [Event]
+    var gen: Gen
+    var index = -1
+    var framesBeforeIndex = 0
+    var t = 0
+    
+    var bpm: Double
+    var framesPerBeat: Double {
+        return 44100 * 60 / bpm
+    }
+    var firstBpm: Double
+    var dynam: Double
+    
+    var renderedResult = [Double]()
+    
+    var noteEffects = [String : NoteEffect]()
+    var lineEffects = [String : LineEffect]()
+    
+    var isDone: Bool { return index >= events.count }
+    
+    init(bpm: Double, string s: String) {
+        self.firstBpm = bpm
+        self.bpm = bpm
+        let multipleNoteOctaves = #"\[(\#(Event.oneNoteOctaveRegex))+\]"#
+        let duration = #"(\{\d+\}|\{\d+/\d+\})?"#
+        let standardEvent = "(r|" + Event.oneNoteOctaveRegex + "|" + multipleNoteOctaves + ")" + duration
+        let r = "(" + standardEvent + ")|" + Event.commandRegex
+        self.gen = sineWave
+        self.dynam = 1
+        self.events = regex(r, matches: s).map { Event($0) }
+    }
+    
+    func execute(_ c: Event.Command, eventStart: Int) {
+        switch c {
+        case let .remove(id: s):
+            self.noteEffects[s] = nil
+            self.lineEffects[s] = nil
+            
+        case let .adsr(adsr: adsr): self.noteEffects[ADSR.id] = adsr
+        case var .echo(echo: echo):
+            echo.framesPerBeat = framesPerBeat
+            echo.effectStart = eventStart
+            self.lineEffects[Echo.id] = echo
+            
+
+        case let .inst(s: s): gen = Instrument(rawValue: s)!.gen()
+        case let .tempo(t: t): bpm = firstBpm * t
+        case let .dynam(t: t): dynam = t
+        }
+    }
+    
+    func render(_ lineIndex: Int, _ totalLineCount: Int) {
+        renderedResult = []
+        for i in 0..<events.count {
+            print("rendering event \(i+1) of \(events.count) (\(lineIndex+1)/\(totalLineCount))")
+            
+            let e = events[i]
+            var singleEventRender = [Double]()
+            var t = -1
+            let beats = Double(e.durationNum) / Double(e.durationDenom)
+            let eventFrameLength = Int(beats * framesPerBeat)
+            
+            while t < eventFrameLength {
+                t += 1
+                if let command = e.command { execute(command, eventStart: renderedResult.count) }
+                else {
+                    var total = 0.0
+                    for f in e.freqs {
+                        total += gen(f, t)
+                    }
+                    singleEventRender.append(total * dynam)
+                }
+            }
+//            noteEffects.values.forEach {
+//                $0.apply(to: &singleEventRender)
+//            }
+//
+//            renderedResult.append(contentsOf: singleEventRender)
+//            lineEffects.values.forEach {
+//                let startIndex = renderedResult.count - $0.leadTime - singleEventRender.count
+//                if startIndex < 0 {
+//                    renderedResult = $0.apply(to: renderedResult)
+//                } else {
+//                    renderedResult[startIndex...] = ArraySlice($0.apply(to: Array(renderedResult[startIndex...])))
+//                }
+//            }
+            
+            let eventStart = renderedResult.count
+            renderedResult.append(contentsOf: singleEventRender)
+            noteEffects.values.forEach {
+                $0.apply(to: &renderedResult, at: eventStart)
+            }
+            
+            lineEffects.values.forEach {
+                $0.apply(to: &renderedResult, at: eventStart)
+            }
+        }
+    }
+}
+
+
+func renderPolyphony(_ lines: [Line]) -> Data {
+    let now = Date()
+    defer { print("Total compute time: \(Date().timeIntervalSince(now))") }
+    
+    for i in 0..<lines.count {
+        lines[i].render(i, lines.count)
+    }
+    
+    let maxT = lines.map({ $0.renderedResult.count }).max()!
+    var doubleResult = [Double]()
+    doubleResult.reserveCapacity(maxT)
+    var maxValue = 0.0
+    
+    for t in 0..<maxT {
+        if t % 44100 == 0 { print("accumulating \(t/44100)s of \(maxT/44100)s") }
+        var total = 0.0
+        for l in lines {
+            total += t < l.renderedResult.count ? l.renderedResult[t] : 0
+        }
+        if abs(total) > maxValue { maxValue = abs(total) }
+        doubleResult.append(total)
+    }
+    
+    var int16result = [Int16]()
+    int16result.reserveCapacity(maxT)
+    for t in 0..<maxT {
+        if t % 44100 == 0 { print("scaling \(t/44100)s of \(maxT/44100)s") }
+        int16result.append((doubleResult[t] / maxValue).toInt16())
+    }
+    return int16result.withUnsafeBufferPointer { Data(buffer: $0 ) }
+}
