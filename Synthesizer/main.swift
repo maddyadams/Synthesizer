@@ -8,8 +8,7 @@
 
 import Foundation
 
-#warning("Change below to an error")
-#warning("Change this path to a suitable destination for the audio file on your computer")
+#error("Change this path to a suitable destination for the audio file on your computer")
 let filePath = "/Users/msa/Desktop/synthesized.wav"
 
 Synthesizer().main()

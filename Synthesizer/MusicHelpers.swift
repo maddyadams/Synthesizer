@@ -294,85 +294,93 @@ func renderPolyphony(_ lines: [Line]) -> Data {
     
     
     
-//    let maxT = lines.map({ $0.renderedResult.count }).max()!
-//    var doubleResult = [Double]()
-//    doubleResult.reserveCapacity(maxT)
+    let maxT = lines.map({ $0.renderedResult.count }).max()!
+    var doubleResult = [Double]()
+    doubleResult.reserveCapacity(maxT)
+    var maxValue = 0.0
+
+    for t in 0..<maxT {
+        if t % 44100 == 0 { print("accumulating \(t/44100)s of \(maxT/44100)s") }
+        var total = 0.0
+        for l in lines {
+            total += t < l.renderedResult.count ? l.renderedResult[t] : 0
+        }
+        if abs(total) > maxValue { maxValue = abs(total) }
+        doubleResult.append(total)
+    }
+    
+    var int16result = [Int16]()
+    int16result.reserveCapacity(maxT)
+    for t in 0..<maxT {
+        if t % 44100 == 0 { print("scaling \(t/44100)s of \(maxT/44100)s") }
+        int16result.append((doubleResult[t] / maxValue).toInt16())
+    }
+    return int16result.withUnsafeBufferPointer { Data(buffer: $0) }
+    
+    
+    //multithreading experiment, ended up being slower than single thread in release
+    
+//    let maxT = lines.map { $0.renderedResult.count }.max()!
+//    var doubleData = Data(repeating: 0, count: maxT * MemoryLayout<Double>.size)
+//    var threadCount = 4
 //    var maxValue = 0.0
 //
-//    for t in 0..<maxT {
-//        if t % 44100 == 0 { print("accumulating \(t/44100)s of \(maxT/44100)s") }
-//        var total = 0.0
-//        for l in lines {
-//            total += t < l.renderedResult.count ? l.renderedResult[t] : 0
+//    var syncQueue = DispatchQueue(label: "sync queue")
+//
+//
+//    doubleData.withUnsafeMutableBytes { _ptr in
+//        let ptr = _ptr.bindMemory(to: Double.self)
+//
+//        for i in 0..<threadCount {
+//            DispatchQueue.global().async {
+//                defer { semaphore.signal() }
+//
+//                var localMaxValue = 0.0
+//                for t in (maxT * i) / threadCount ..< (maxT * (i + 1)) / threadCount {
+//                    var total = 0.0
+//                    for l in lines {
+//                        total += t < l.renderedResult.count ? l.renderedResult[t] : 0
+//                    }
+//                    ptr[t] = total
+//                    if abs(total) > localMaxValue { localMaxValue = abs(total) }
+//                }
+//                syncQueue.sync {
+//                    maxValue = max(maxValue, localMaxValue)
+//                }
+//            }
 //        }
-//        if abs(total) > maxValue { maxValue = abs(total) }
-//        doubleResult.append(total)
+//
+//        for _ in 0..<threadCount {
+//            semaphore.wait()
+//        }
 //    }
     
-    let maxT = lines.map { $0.renderedResult.count }.max()!
-    var doubleData = Data(repeating: 0, count: maxT * MemoryLayout<Double>.size)
-    let threadCount = 16
-    var maxValue = 0.0
-    
-    var syncQueue = DispatchQueue(label: "sync queue")
-    
-    for i in 0..<threadCount {
-        DispatchQueue.global().async {
-            defer { semaphore.signal() }
-            
-            doubleData.withUnsafeMutableBytes { _ptr in
-                let ptr = _ptr.bindMemory(to: Double.self)
-                
-                var localMaxValue = 0.0
-                for t in stride(from: i, to: maxT, by: threadCount) {
-                    var total = 0.0
-                    for l in lines {
-                        total += t < l.renderedResult.count ? l.renderedResult[t] : 0
-                    }
-                    ptr[t] = total
-                    if abs(total) > localMaxValue { localMaxValue = abs(total) }
-                }
-                syncQueue.sync {
-                    maxValue = max(maxValue, localMaxValue)
-                }
-            }
-        }
-    }
-    for _ in 0..<threadCount {
-        semaphore.wait()
-    }
     
     
     
     
-//    var int16result = [Int16]()
-//    int16result.reserveCapacity(maxT)
-//    for t in 0..<maxT {
-//        if t % 44100 == 0 { print("scaling \(t/44100)s of \(maxT/44100)s") }
-//        int16result.append((doubleResult[t] / maxValue).toInt16())
+//    var int16Data = Data(repeating: 0, count: maxT * MemoryLayout<Int16>.size)
+//
+//    doubleData.withUnsafeBytes { _doubleResult in
+//        let doubleResult = _doubleResult.bindMemory(to: Double.self)
+//        int16Data.withUnsafeMutableBytes { _ptr in
+//            let ptr = _ptr.bindMemory(to: Int16.self)
+//
+//            for i in 0..<threadCount {
+//                DispatchQueue.global().async {
+//                    defer { semaphore.signal() }
+//
+//                    for t in (maxT * i) / threadCount ..< (maxT * (i + 1)) / threadCount {
+//                        ptr[t] = (doubleResult[t] / maxValue).toInt16()
+//                    }
+//                }
+//            }
+//        }
+//
+//        for _ in 0..<threadCount {
+//            semaphore.wait()
+//        }
 //    }
-//    return int16result.withUnsafeBufferPointer { Data(buffer: $0) }
-    
-    
-    var int16Data = Data(repeating: 0, count: maxT * MemoryLayout<Int16>.size)
-    for i in 0..<threadCount {
-        DispatchQueue.global().async {
-            defer { semaphore.signal() }
-            
-            doubleData.withUnsafeBytes { _doubleResult in
-                let doubleResult = _doubleResult.bindMemory(to: Double.self)
-                int16Data.withUnsafeMutableBytes { _ptr in
-                    let ptr = _ptr.bindMemory(to: Int16.self)
-                    for t in stride(from: i, to: maxT, by: threadCount) {
-                        ptr[t] = (doubleResult[t] / maxValue).toInt16()
-                    }
-                }
-            }
-        }
-    }
-    for _ in 0..<threadCount {
-        semaphore.wait()
-    }
-    
-    return int16Data
+//
+//    return int16Data
 }
