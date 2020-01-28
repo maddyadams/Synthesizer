@@ -1,7 +1,7 @@
 # Synthesizer
 As a computer scientist, hobbyist composer, and avid video game fan, video game music is this very fulfilling intersection of music and technology. Unfortunately, most of the existing tools I have for working with music are geared towards "traditional" music, leaving little room for experimenting with the timbre or waveforms of instruments. 
 
-While still a work in progress, this project allows me to write music in a (somewhat unwieldy) text-based format and then create custom instruments by combining sine, square, triangle, and sawtooth waves. I can also apply effects traditional effects like changing dynamics and tempo (and even changing the tuning system if desired), as well as more "electronic" effects like an echo or an ADSR envelope to adjust the attack and release of notes. 
+While still a work in progress, this project allows me to write music in a (somewhat unwieldy) text-based format and then create custom instruments by combining sine, square, triangle, and sawtooth waves. I can also apply traditional effects like changing dynamics and tempo (and even changing the tuning system if desired), as well as more "electronic" effects like an echo or an ADSR envelope to adjust the attack and release of notes. 
 
 [Audio file example](https://www.dropbox.com/s/wc0lg6fki7zv4tw/song1.wav?dl=0)
 
