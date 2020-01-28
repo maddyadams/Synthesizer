@@ -3,6 +3,8 @@ As a computer scientist, hobbyist composer, and avid video game fan, video game 
 
 While still a work in progress, this project allows me to write music in a (somewhat unwieldy) text-based format and then create custom instruments by combining sine, square, triangle, and sawtooth waves. I can also apply effects traditional effects like changing dynamics and tempo (and even changing the tuning system if desired), as well as more "electronic" effects like an echo or an ADSR envelope to adjust the attack and release of notes. 
 
+[Audio file example](https://previews.dropbox.com/p/hls_master_playlist/AAsHHPkPq9x4nwZax0LbA7AkO8XdTGsIv3bA3J1tU_a8opKX4_SjcgUzOZ4CU8XvHx1uNu63sPrDxEKwcqaFxo963hnNZ0v8SPRV-3vOjsy8RXYUSz0WlDQBaHyN3juwDDQt6JkDM8WRQjejNEsmF13K8vXXUxPaN5rpXXZFdqgXjYl7nWe4gvOBTK-GWJu1fORe_FFB3adJUp-qPGFKqygkU4a5M_0xF_6MsMUwjXBjY1LmwkqzkGIrPdzTVKCjqU3sH1vR9Ojaxc2m4t54vnXoXxS0DyLv38oq0qdUJnD7_Pq9j3HJQtOR91g0a2H8DtZf_2M8cfDzQ-DufNIJjq0hUg3BCsX8_ii2HWgFS_6RaCbzwayWJz6Kwnpc5SRfCUNQKu5IJ1aHvRkxkKUvUaIAKMQz5_EUNaAjRCJX_czIbnOuSQHFpOtcnAUMZFpYFQi2WfjvnXsCrFl64Kha6X601gvMf21nZyA-SiiqET3i6TCXsJO6lCnH_M42T96RHsNpzg91GADPHGaTgX86k8ogfAs_LepZSZjCZ-yvefkhBSptD2orvXJySqCxCHJ1T6o/p.m3u8)
+
 First, change the file path in main.swift. Then, when you run the project, it should render a song and write it to that file path. \
 You can change which song is rendered in the Synthesizer.makeSoundData() method in Synthesizer.main. Change the song1() method to song2, song3, song4, or write your own song and render it. You can also change or create new instruments in Synthesizer.main. \
 MiscHelpers.swift contains some miscellaneous helper methods. \
